@@ -609,12 +609,10 @@ export default function PlanillasGenerator() {
 
     switch (plantilla) {
       case "mercadolibre": {
-        // IVA incluido en el precio de venta (discriminado)
         const montoImpuesto = imp > 0 ? (f.valorA * imp) / (100 + imp) : 0;
         return { montoImpuesto, precioUnitarioFinal: f.valorA };
       }
       case "presupuesto": {
-        // El Precio Unitario ya lleva el impuesto sumado
         const impuestoUnitario = f.valorA * factor;
         const precioUnitarioFinal = f.valorA + impuestoUnitario;
         const montoImpuesto = impuestoUnitario * f.valorB;
@@ -634,7 +632,9 @@ export default function PlanillasGenerator() {
         return { montoImpuesto: conMargen * factor, precioUnitarioFinal: f.valorA };
       }
       case "pedidos": {
-        return { montoImpuesto: f.valorA * factor, precioUnitarioFinal: f.valorA };
+        const cant = f.cantidad || 1;
+        const subtotalPedido = f.valorA * cant;
+        return { montoImpuesto: subtotalPedido * factor, precioUnitarioFinal: f.valorA };
       }
       default:
         return { montoImpuesto: 0, precioUnitarioFinal: f.valorA };
@@ -656,7 +656,6 @@ export default function PlanillasGenerator() {
       case "gastos":
         return f.valorA * f.valorB - montoImpuesto;
       case "presupuesto":
-        // Multiplica el precio unitario (que ya tiene el impuesto sumado) por la cantidad
         return precioUnitarioFinal * f.valorB;
       case "cuentas":
         return f.valorA - f.valorB - montoImpuesto;
@@ -664,8 +663,10 @@ export default function PlanillasGenerator() {
         const conMargen = f.valorA * (1 + f.valorB / 100);
         return conMargen + montoImpuesto;
       }
-      case "pedidos":
-        return f.valorA + f.valorB - montoImpuesto;
+      case "pedidos": {
+        const cant = f.cantidad || 1;
+        return f.valorA * cant + f.valorB + montoImpuesto;
+      }
       default:
         return 0;
     }
@@ -677,9 +678,13 @@ export default function PlanillasGenerator() {
     const imp = getPorcentajeImpuesto();
     const tieneColumnaRubro = rubro !== "general";
     const esPresupuesto = plantilla === "presupuesto";
+    const esPedidos = plantilla === "pedidos";
+    const esSumaImpuesto = esPresupuesto || plantilla === "precios" || esPedidos;
 
-    // Ahora hay 1 columna adicional para el Impuesto (F sin rubro, G con rubro)
-    const ultimaLetra = tieneColumnaRubro ? "G" : "F";
+    // Calcula la última letra según si tiene Rubro y/o columna Cantidad (Pedidos)
+    const columnasExtra = (tieneColumnaRubro ? 1 : 0) + (esPedidos ? 1 : 0);
+    const ultimaLetra = String.fromCharCode(70 + columnasExtra); // F, G o H
+
     sheet.mergeCells(`A1:${ultimaLetra}1`);
     const titleCell = sheet.getCell("A1");
     titleCell.value = `${nombreNegocio.toUpperCase()} — ${configActual.tituloExcel}`;
@@ -717,11 +722,12 @@ export default function PlanillasGenerator() {
 
     const headers: string[] = ["Producto / Concepto"];
     if (tieneColumnaRubro) headers.push(rubroActual.columnaExtra);
+    headers.push(esPresupuesto ? `${configActual.colA} (c/ Imp.)` : configActual.colA);
+    if (esPedidos) headers.push("Cantidad");
     headers.push(
-      esPresupuesto ? `${configActual.colA} (c/ Imp.)` : configActual.colA,
       configActual.colB,
       configActual.colDropdown,
-      esPresupuesto ? `Impuesto Incl. (${imp}%)` : `Desc. Impuesto (${imp}%)`,
+      esSumaImpuesto ? `Impuesto (${imp}%)` : `Desc. Impuesto (${imp}%)`,
       configActual.colResultado
     );
 
@@ -735,19 +741,23 @@ export default function PlanillasGenerator() {
     };
     headerRow.alignment = { vertical: "middle" };
 
-    const offset = tieneColumnaRubro ? 1 : 0;
-    const colALetter = String.fromCharCode(66 + offset); // B o C
-    const colBLetter = String.fromCharCode(67 + offset); // C o D
-    const colDropLetter = String.fromCharCode(68 + offset); // D o E
-    const colImpLetter = String.fromCharCode(69 + offset); // E o F
+    const offsetRubro = tieneColumnaRubro ? 1 : 0;
+    const offsetTotal = offsetRubro + (esPedidos ? 1 : 0);
+
+    const colALetter = String.fromCharCode(66 + offsetRubro); // B o C
+    const colCantLetter = String.fromCharCode(67 + offsetRubro); // Solo si esPedidos
+    const colBLetter = String.fromCharCode(67 + offsetTotal);
+    const colDropLetter = String.fromCharCode(68 + offsetTotal);
+    const colImpLetter = String.fromCharCode(69 + offsetTotal);
 
     filas.forEach((f, idx) => {
       const r = idx + 4;
       const rowValues: (string | number | { formula: string })[] = [f.concepto];
       if (tieneColumnaRubro) rowValues.push(f.detalleRubro);
 
-      // En Presupuesto, el Precio Unitario exportado ya lleva el impuesto sumado
       const valorAExportar = esPresupuesto ? f.valorA * (1 + imp / 100) : f.valorA;
+      rowValues.push(valorAExportar);
+      if (esPedidos) rowValues.push(f.cantidad || 1);
 
       let formulaImpuesto = "0";
       let formulaResultado = "";
@@ -766,7 +776,6 @@ export default function PlanillasGenerator() {
           formulaResultado = `(${colALetter}${r}*${colBLetter}${r})-${colImpLetter}${r}`;
           break;
         case "presupuesto":
-          // Desglosa el impuesto que ya está incluido dentro de colALetter * colBLetter
           formulaImpuesto =
             imp > 0
               ? `(${colALetter}${r}*${colBLetter}${r})-(${colALetter}${r}*${colBLetter}${r})/(1+${imp / 100})`
@@ -782,13 +791,12 @@ export default function PlanillasGenerator() {
           formulaResultado = `(${colALetter}${r}*(1+${colBLetter}${r}/100))+${colImpLetter}${r}`;
           break;
         case "pedidos":
-          formulaImpuesto = `${colALetter}${r}*${imp / 100}`;
-          formulaResultado = `${colALetter}${r}+${colBLetter}${r}-${colImpLetter}${r}`;
+          formulaImpuesto = `(${colALetter}${r}*${colCantLetter}${r})*${imp / 100}`;
+          formulaResultado = `(${colALetter}${r}*${colCantLetter}${r})+${colBLetter}${r}+${colImpLetter}${r}`;
           break;
       }
 
       rowValues.push(
-        valorAExportar,
         f.valorB,
         f.desplegable,
         { formula: formulaImpuesto },
@@ -798,26 +806,25 @@ export default function PlanillasGenerator() {
       const addedRow = sheet.addRow(rowValues);
       addedRow.height = 22;
 
-      const dropdownCell = addedRow.getCell(4 + offset);
+      const dropdownCell = addedRow.getCell(4 + offsetTotal);
       dropdownCell.dataValidation = {
         type: "list",
         allowBlank: false,
         formulae: [`"${configActual.opcionesDropdown.join(",")}"`],
       };
 
-      addedRow.getCell(2 + offset).numFmt = `"${moneda}"#,##0.00`;
+      addedRow.getCell(2 + offsetRubro).numFmt = `"${moneda}"#,##0.00`;
       if (
         plantilla !== "stock" &&
         plantilla !== "caja" &&
         plantilla !== "presupuesto" &&
         plantilla !== "precios"
       ) {
-        addedRow.getCell(3 + offset).numFmt = `"${moneda}"#,##0.00`;
+        addedRow.getCell(3 + offsetTotal).numFmt = `"${moneda}"#,##0.00`;
       }
-      // Formato moneda para la nueva columna de Impuesto (5 + offset) y Resultado (6 + offset)
-      addedRow.getCell(5 + offset).numFmt = `"${moneda}"#,##0.00`;
-      addedRow.getCell(6 + offset).numFmt = `"${moneda}"#,##0.00`;
-      addedRow.getCell(6 + offset).font = { bold: true };
+      addedRow.getCell(5 + offsetTotal).numFmt = `"${moneda}"#,##0.00`;
+      addedRow.getCell(6 + offsetTotal).numFmt = `"${moneda}"#,##0.00`;
+      addedRow.getCell(6 + offsetTotal).font = { bold: true };
     });
 
     sheet.columns.forEach((col) => {
@@ -1504,11 +1511,16 @@ export default function PlanillasGenerator() {
                           ? `${configActual.colA} (c/ Imp.)`
                           : configActual.colA}
                       </th>
+                      {plantilla === "pedidos" && (
+                        <th className="py-3.5 px-4">Cantidad</th>
+                      )}
                       <th className="py-3.5 px-4">{configActual.colB}</th>
                       <th className="py-3.5 px-4">{configActual.colDropdown}</th>
                       <th className="py-3.5 px-4 text-right">
-                        {plantilla === "presupuesto"
-                          ? `Impuesto Incl. (${impActual}%)`
+                        {plantilla === "presupuesto" ||
+                        plantilla === "precios" ||
+                        plantilla === "pedidos"
+                          ? `Impuesto (${impActual}%)`
                           : `Desc. Impuesto (${impActual}%)`}
                       </th>
                       <th className="py-3.5 px-4 text-right">{configActual.colResultado}</th>
@@ -1520,7 +1532,9 @@ export default function PlanillasGenerator() {
                       const resultado = calcularResultadoFila(f);
                       const { montoImpuesto, precioUnitarioFinal } = calcularDetalleImpuesto(f);
                       const esPresupuesto = plantilla === "presupuesto";
-                      const esSumaImpuesto = esPresupuesto || plantilla === "precios";
+                      const esPedidos = plantilla === "pedidos";
+                      const esSumaImpuesto =
+                        esPresupuesto || plantilla === "precios" || esPedidos;
 
                       return (
                         <tr key={f.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1572,6 +1586,24 @@ export default function PlanillasGenerator() {
                               />
                             </div>
                           </td>
+
+                          {esPedidos && (
+                            <td className="py-2.5 px-3">
+                              <input
+                                type="number"
+                                min={1}
+                                value={f.cantidad ?? 1}
+                                onChange={(e) =>
+                                  actualizarFila(
+                                    f.id,
+                                    "cantidad",
+                                    Math.max(1, Number(e.target.value))
+                                  )
+                                }
+                                className="w-20 px-2.5 py-1.5 border border-slate-200 hover:border-slate-300 focus:border-blue-500 rounded-lg bg-white text-slate-800 font-medium"
+                              />
+                            </td>
+                          )}
 
                           <td className="py-2.5 px-3">
                             <input
