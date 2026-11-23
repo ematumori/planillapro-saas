@@ -1087,7 +1087,7 @@ export default function PlanillasGenerator() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-bold text-lg tracking-tight text-slate-900">PlanillaPro</h1>
+              <h1 className="font-bold text-lg tracking-tight text-slate-900">CálculoPro</h1>
               {esPro ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full">
                   <Crown className="w-3 h-3" /> PRO
