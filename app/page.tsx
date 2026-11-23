@@ -345,7 +345,7 @@ export default function PlanillasGenerator() {
 
     if (!esPro && misPlanillas.length >= LIMITE_PLANILLAS_GRATIS) {
       abrirModalUpgrade(
-        `El plan Gratuito permite guardar hasta ${LIMITE_PLANILLAS_GRATIS} planillas en la nube. Actualiza a CálculoPro para almacenamiento ilimitado.`
+        `El plan Gratuito permite guardar hasta ${LIMITE_PLANILLAS_GRATIS} planillas en la nube. Actualiza a PlanillaPro para almacenamiento ilimitado.`
       );
       return;
     }
@@ -572,7 +572,7 @@ export default function PlanillasGenerator() {
   const agregarFila = () => {
     if (!esPro && filas.length >= LIMITE_FILAS_GRATIS) {
       abrirModalUpgrade(
-        `Has alcanzado el límite de ${LIMITE_FILAS_GRATIS} filas del plan Gratuito. Desbloquea filas ilimitadas con CálculoPro.`
+        `Has alcanzado el límite de ${LIMITE_FILAS_GRATIS} filas del plan Gratuito. Desbloquea filas ilimitadas con PlanillaPro.`
       );
       return;
     }
@@ -598,33 +598,69 @@ export default function PlanillasGenerator() {
     setFilas(filas.map((f) => (f.id === id ? { ...f, [campo]: valor } : f)));
   };
 
-  const calcularResultadoFila = (f: RowData): number => {
+  const calcularDetalleImpuesto = (f: RowData) => {
     const imp = getPorcentajeImpuesto();
+    const factor = imp / 100;
+
+    switch (plantilla) {
+      case "mercadolibre": {
+        // IVA incluido en el precio de venta (discriminado)
+        const montoImpuesto = imp > 0 ? (f.valorA * imp) / (100 + imp) : 0;
+        return { montoImpuesto, precioUnitarioFinal: f.valorA };
+      }
+      case "presupuesto": {
+        // El Precio Unitario ya lleva el impuesto sumado
+        const impuestoUnitario = f.valorA * factor;
+        const precioUnitarioFinal = f.valorA + impuestoUnitario;
+        const montoImpuesto = impuestoUnitario * f.valorB;
+        return { montoImpuesto, precioUnitarioFinal };
+      }
+      case "stock":
+      case "caja":
+      case "gastos": {
+        const base = f.valorA * f.valorB;
+        return { montoImpuesto: base * factor, precioUnitarioFinal: f.valorA };
+      }
+      case "cuentas": {
+        return { montoImpuesto: f.valorA * factor, precioUnitarioFinal: f.valorA };
+      }
+      case "precios": {
+        const conMargen = f.valorA * (1 + f.valorB / 100);
+        return { montoImpuesto: conMargen * factor, precioUnitarioFinal: f.valorA };
+      }
+      case "pedidos": {
+        return { montoImpuesto: f.valorA * factor, precioUnitarioFinal: f.valorA };
+      }
+      default:
+        return { montoImpuesto: 0, precioUnitarioFinal: f.valorA };
+    }
+  };
+
+  const calcularResultadoFila = (f: RowData): number => {
+    const { montoImpuesto, precioUnitarioFinal } = calcularDetalleImpuesto(f);
 
     switch (plantilla) {
       case "mercadolibre": {
         const porcML = f.desplegable.includes("28%") ? 0.28 : 0.13;
         const comision = f.valorA * porcML;
         const envio = incluirEnvio ? costoEnvioFijo : 0;
-        const iva = imp > 0 ? (f.valorA * imp) / (100 + imp) : 0;
-        return f.valorA - f.valorB - comision - envio - iva;
+        return f.valorA - f.valorB - comision - envio - montoImpuesto;
       }
       case "stock":
       case "caja":
       case "gastos":
-        return f.valorA * f.valorB;
-      case "presupuesto": {
-        const subtotal = f.valorA * f.valorB;
-        return imp > 0 ? subtotal * (1 + imp / 100) : subtotal;
-      }
+        return f.valorA * f.valorB - montoImpuesto;
+      case "presupuesto":
+        // Multiplica el precio unitario (que ya tiene el impuesto sumado) por la cantidad
+        return precioUnitarioFinal * f.valorB;
       case "cuentas":
-        return f.valorA - f.valorB;
+        return f.valorA - f.valorB - montoImpuesto;
       case "precios": {
         const conMargen = f.valorA * (1 + f.valorB / 100);
-        return imp > 0 ? conMargen * (1 + imp / 100) : conMargen;
+        return conMargen + montoImpuesto;
       }
       case "pedidos":
-        return f.valorA + f.valorB;
+        return f.valorA + f.valorB - montoImpuesto;
       default:
         return 0;
     }
@@ -635,8 +671,10 @@ export default function PlanillasGenerator() {
     const sheet = workbook.addWorksheet("Planilla Gestión");
     const imp = getPorcentajeImpuesto();
     const tieneColumnaRubro = rubro !== "general";
+    const esPresupuesto = plantilla === "presupuesto";
 
-    const ultimaLetra = tieneColumnaRubro ? "F" : "E";
+    // Ahora hay 1 columna adicional para el Impuesto (F sin rubro, G con rubro)
+    const ultimaLetra = tieneColumnaRubro ? "G" : "F";
     sheet.mergeCells(`A1:${ultimaLetra}1`);
     const titleCell = sheet.getCell("A1");
     titleCell.value = `${nombreNegocio.toUpperCase()} — ${configActual.tituloExcel}`;
@@ -675,9 +713,10 @@ export default function PlanillasGenerator() {
     const headers: string[] = ["Producto / Concepto"];
     if (tieneColumnaRubro) headers.push(rubroActual.columnaExtra);
     headers.push(
-      configActual.colA,
+      esPresupuesto ? `${configActual.colA} (c/ Imp.)` : configActual.colA,
       configActual.colB,
       configActual.colDropdown,
+      esPresupuesto ? `Impuesto Incl. (${imp}%)` : `Desc. Impuesto (${imp}%)`,
       configActual.colResultado
     );
 
@@ -692,49 +731,65 @@ export default function PlanillasGenerator() {
     headerRow.alignment = { vertical: "middle" };
 
     const offset = tieneColumnaRubro ? 1 : 0;
-    const colALetter = String.fromCharCode(66 + offset);
-    const colBLetter = String.fromCharCode(67 + offset);
-    const colDropLetter = String.fromCharCode(68 + offset);
+    const colALetter = String.fromCharCode(66 + offset); // B o C
+    const colBLetter = String.fromCharCode(67 + offset); // C o D
+    const colDropLetter = String.fromCharCode(68 + offset); // D o E
+    const colImpLetter = String.fromCharCode(69 + offset); // E o F
 
     filas.forEach((f, idx) => {
       const r = idx + 4;
       const rowValues: (string | number | { formula: string })[] = [f.concepto];
       if (tieneColumnaRubro) rowValues.push(f.detalleRubro);
 
-      let formulaExcel = "";
+      // En Presupuesto, el Precio Unitario exportado ya lleva el impuesto sumado
+      const valorAExportar = esPresupuesto ? f.valorA * (1 + imp / 100) : f.valorA;
+
+      let formulaImpuesto = "0";
+      let formulaResultado = "";
+
       switch (plantilla) {
         case "mercadolibre": {
           const envioVal = incluirEnvio ? costoEnvioFijo : 0;
-          const ivaStr = imp > 0 ? `-(${colALetter}${r}*${imp}/${100 + imp})` : "";
-          formulaExcel = `${colALetter}${r}-${colBLetter}${r}-IF(ISNUMBER(SEARCH("28%",${colDropLetter}${r})),${colALetter}${r}*0.28,${colALetter}${r}*0.13)-${envioVal}${ivaStr}`;
+          formulaImpuesto = imp > 0 ? `${colALetter}${r}*${imp}/${100 + imp}` : "0";
+          formulaResultado = `${colALetter}${r}-${colBLetter}${r}-IF(ISNUMBER(SEARCH("28%",${colDropLetter}${r})),${colALetter}${r}*0.28,${colALetter}${r}*0.13)-${envioVal}-${colImpLetter}${r}`;
           break;
         }
         case "stock":
         case "caja":
         case "gastos":
-          formulaExcel = `${colALetter}${r}*${colBLetter}${r}`;
+          formulaImpuesto = `(${colALetter}${r}*${colBLetter}${r})*${imp / 100}`;
+          formulaResultado = `(${colALetter}${r}*${colBLetter}${r})-${colImpLetter}${r}`;
           break;
         case "presupuesto":
-          formulaExcel =
+          // Desglosa el impuesto que ya está incluido dentro de colALetter * colBLetter
+          formulaImpuesto =
             imp > 0
-              ? `(${colALetter}${r}*${colBLetter}${r})*(1+${imp}/100)`
-              : `${colALetter}${r}*${colBLetter}${r}`;
+              ? `(${colALetter}${r}*${colBLetter}${r})-(${colALetter}${r}*${colBLetter}${r})/(1+${imp / 100})`
+              : "0";
+          formulaResultado = `${colALetter}${r}*${colBLetter}${r}`;
           break;
         case "cuentas":
-          formulaExcel = `${colALetter}${r}-${colBLetter}${r}`;
+          formulaImpuesto = `${colALetter}${r}*${imp / 100}`;
+          formulaResultado = `${colALetter}${r}-${colBLetter}${r}-${colImpLetter}${r}`;
           break;
         case "precios":
-          formulaExcel =
-            imp > 0
-              ? `${colALetter}${r}*(1+${colBLetter}${r}/100)*(1+${imp}/100)`
-              : `${colALetter}${r}*(1+${colBLetter}${r}/100)`;
+          formulaImpuesto = `(${colALetter}${r}*(1+${colBLetter}${r}/100))*${imp / 100}`;
+          formulaResultado = `(${colALetter}${r}*(1+${colBLetter}${r}/100))+${colImpLetter}${r}`;
           break;
         case "pedidos":
-          formulaExcel = `${colALetter}${r}+${colBLetter}${r}`;
+          formulaImpuesto = `${colALetter}${r}*${imp / 100}`;
+          formulaResultado = `${colALetter}${r}+${colBLetter}${r}-${colImpLetter}${r}`;
           break;
       }
 
-      rowValues.push(f.valorA, f.valorB, f.desplegable, { formula: formulaExcel });
+      rowValues.push(
+        valorAExportar,
+        f.valorB,
+        f.desplegable,
+        { formula: formulaImpuesto },
+        { formula: formulaResultado }
+      );
+
       const addedRow = sheet.addRow(rowValues);
       addedRow.height = 22;
 
@@ -754,8 +809,10 @@ export default function PlanillasGenerator() {
       ) {
         addedRow.getCell(3 + offset).numFmt = `"${moneda}"#,##0.00`;
       }
+      // Formato moneda para la nueva columna de Impuesto (5 + offset) y Resultado (6 + offset)
       addedRow.getCell(5 + offset).numFmt = `"${moneda}"#,##0.00`;
-      addedRow.getCell(5 + offset).font = { bold: true };
+      addedRow.getCell(6 + offset).numFmt = `"${moneda}"#,##0.00`;
+      addedRow.getCell(6 + offset).font = { bold: true };
     });
 
     sheet.columns.forEach((col) => {
@@ -795,7 +852,7 @@ export default function PlanillasGenerator() {
             <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-6 text-white flex justify-between items-start">
               <div>
                 <div className="inline-flex items-center gap-1.5 bg-white/20 px-2.5 py-1 rounded-full text-xs font-bold mb-2">
-                  <Crown className="w-3.5 h-3.5" /> CálculoPro ILIMITADO
+                  <Crown className="w-3.5 h-3.5" /> PLANILLAPRO ILIMITADO
                 </div>
                 <h3 className="font-extrabold text-2xl">Escala tu gestión comercial</h3>
                 <p className="text-xs text-amber-50 mt-1">
@@ -871,7 +928,7 @@ export default function PlanillasGenerator() {
               <div className="flex items-center gap-2">
                 <Cloud className="w-5 h-5 text-blue-600" />
                 <h3 className="font-bold text-lg text-slate-900">
-                  {isRegisterMode ? "Crear Cuenta en CálculoPro" : "Iniciar Sesión"}
+                  {isRegisterMode ? "Crear Cuenta en PlanillaPro" : "Iniciar Sesión"}
                 </h3>
               </div>
               <button
@@ -1030,7 +1087,7 @@ export default function PlanillasGenerator() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-bold text-lg tracking-tight text-slate-900">CálculoPro</h1>
+              <h1 className="font-bold text-lg tracking-tight text-slate-900">PlanillaPro</h1>
               {esPro ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full">
                   <Crown className="w-3 h-3" /> PRO
@@ -1437,9 +1494,18 @@ export default function PlanillasGenerator() {
                       {rubro !== "general" && (
                         <th className="py-3.5 px-4 text-blue-700">{rubroActual.columnaExtra}</th>
                       )}
-                      <th className="py-3.5 px-4">{configActual.colA}</th>
+                      <th className="py-3.5 px-4">
+                        {plantilla === "presupuesto"
+                          ? `${configActual.colA} (c/ Imp.)`
+                          : configActual.colA}
+                      </th>
                       <th className="py-3.5 px-4">{configActual.colB}</th>
                       <th className="py-3.5 px-4">{configActual.colDropdown}</th>
+                      <th className="py-3.5 px-4 text-right">
+                        {plantilla === "presupuesto"
+                          ? `Impuesto Incl. (${impActual}%)`
+                          : `Desc. Impuesto (${impActual}%)`}
+                      </th>
                       <th className="py-3.5 px-4 text-right">{configActual.colResultado}</th>
                       <th className="py-3.5 px-3 w-10 print:hidden"></th>
                     </tr>
@@ -1447,6 +1513,10 @@ export default function PlanillasGenerator() {
                   <tbody className="divide-y divide-slate-100">
                     {filas.map((f) => {
                       const resultado = calcularResultadoFila(f);
+                      const { montoImpuesto, precioUnitarioFinal } = calcularDetalleImpuesto(f);
+                      const esPresupuesto = plantilla === "presupuesto";
+                      const esSumaImpuesto = esPresupuesto || plantilla === "precios";
+
                       return (
                         <tr key={f.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="py-2.5 px-3">
@@ -1476,10 +1546,23 @@ export default function PlanillasGenerator() {
                               <span className="text-xs text-slate-400 mr-1">{moneda}</span>
                               <input
                                 type="number"
-                                value={f.valorA}
-                                onChange={(e) =>
-                                  actualizarFila(f.id, "valorA", Number(e.target.value))
+                                value={
+                                  esPresupuesto
+                                    ? Number(precioUnitarioFinal.toFixed(2))
+                                    : f.valorA
                                 }
+                                onChange={(e) => {
+                                  const nuevoVal = Number(e.target.value);
+                                  if (esPresupuesto && impActual > 0) {
+                                    actualizarFila(
+                                      f.id,
+                                      "valorA",
+                                      nuevoVal / (1 + impActual / 100)
+                                    );
+                                  } else {
+                                    actualizarFila(f.id, "valorA", nuevoVal);
+                                  }
+                                }}
                                 className="w-24 px-2.5 py-1.5 border border-slate-200 hover:border-slate-300 focus:border-blue-500 rounded-lg bg-white text-slate-800 font-medium"
                               />
                             </div>
@@ -1510,6 +1593,23 @@ export default function PlanillasGenerator() {
                                 </option>
                               ))}
                             </select>
+                          </td>
+
+                          <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-md font-semibold text-xs ${
+                                esSumaImpuesto
+                                  ? "bg-slate-100 text-slate-700"
+                                  : "bg-amber-50 text-amber-700"
+                              }`}
+                            >
+                              {esSumaImpuesto ? "+" : "-"}
+                              {moneda}
+                              {montoImpuesto.toLocaleString("es-AR", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </span>
                           </td>
 
                           <td className="py-2.5 px-4 text-right whitespace-nowrap">
