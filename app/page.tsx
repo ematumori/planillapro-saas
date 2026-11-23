@@ -158,7 +158,7 @@ const PLANTILLAS_CONFIG: Record<
     colA: "Precio Unitario",
     colB: "Cantidad",
     colDropdown: "Condición Entrega",
-    colResultado: "Subtotal Final",
+    colResultado: "Subtotal Neto",
     opcionesDropdown: ["Inmediata", "48 hs hábiles", "A pedido (7 días)", "Retiro en local"],
     defaultDropdown: "Inmediata",
   },
@@ -613,10 +613,9 @@ export default function PlanillasGenerator() {
         return { montoImpuesto, precioUnitarioFinal: f.valorA };
       }
       case "presupuesto": {
-        const impuestoUnitario = f.valorA * factor;
-        const precioUnitarioFinal = f.valorA + impuestoUnitario;
-        const montoImpuesto = impuestoUnitario * f.valorB;
-        return { montoImpuesto, precioUnitarioFinal };
+        const subtotalNeto = f.valorA * f.valorB;
+        const montoImpuesto = subtotalNeto * factor;
+        return { montoImpuesto, precioUnitarioFinal: f.valorA };
       }
       case "stock":
       case "caja":
@@ -642,7 +641,7 @@ export default function PlanillasGenerator() {
   };
 
   const calcularResultadoFila = (f: RowData): number => {
-    const { montoImpuesto, precioUnitarioFinal } = calcularDetalleImpuesto(f);
+    const { montoImpuesto } = calcularDetalleImpuesto(f);
 
     switch (plantilla) {
       case "mercadolibre": {
@@ -656,7 +655,8 @@ export default function PlanillasGenerator() {
       case "gastos":
         return f.valorA * f.valorB - montoImpuesto;
       case "presupuesto":
-        return precioUnitarioFinal * f.valorB;
+        // Subtotal Neto (el Total Final con impuesto se calcula sumando montoImpuesto)
+        return f.valorA * f.valorB;
       case "cuentas":
         return f.valorA - f.valorB - montoImpuesto;
       case "precios": {
@@ -681,8 +681,9 @@ export default function PlanillasGenerator() {
     const esPedidos = plantilla === "pedidos";
     const esSumaImpuesto = esPresupuesto || plantilla === "precios" || esPedidos;
 
-    // Calcula la última letra según si tiene Rubro y/o columna Cantidad (Pedidos)
-    const columnasExtra = (tieneColumnaRubro ? 1 : 0) + (esPedidos ? 1 : 0);
+    // Calcula la última letra según columnas extra (Rubro, Cantidad en Pedidos, Total Final en Presupuestos)
+    const columnasExtra =
+      (tieneColumnaRubro ? 1 : 0) + (esPedidos ? 1 : 0) + (esPresupuesto ? 1 : 0);
     const ultimaLetra = String.fromCharCode(70 + columnasExtra); // F, G o H
 
     sheet.mergeCells(`A1:${ultimaLetra}1`);
@@ -722,7 +723,7 @@ export default function PlanillasGenerator() {
 
     const headers: string[] = ["Producto / Concepto"];
     if (tieneColumnaRubro) headers.push(rubroActual.columnaExtra);
-    headers.push(esPresupuesto ? `${configActual.colA} (c/ Imp.)` : configActual.colA);
+    headers.push(configActual.colA);
     if (esPedidos) headers.push("Cantidad");
     headers.push(
       configActual.colB,
@@ -730,6 +731,7 @@ export default function PlanillasGenerator() {
       esSumaImpuesto ? `Impuesto (${imp}%)` : `Desc. Impuesto (${imp}%)`,
       configActual.colResultado
     );
+    if (esPresupuesto) headers.push("Total Final (c/ Imp.)");
 
     const headerRow = sheet.addRow(headers);
     headerRow.height = 24;
@@ -744,19 +746,19 @@ export default function PlanillasGenerator() {
     const offsetRubro = tieneColumnaRubro ? 1 : 0;
     const offsetTotal = offsetRubro + (esPedidos ? 1 : 0);
 
-    const colALetter = String.fromCharCode(66 + offsetRubro); // B o C
-    const colCantLetter = String.fromCharCode(67 + offsetRubro); // Solo si esPedidos
+    const colALetter = String.fromCharCode(66 + offsetRubro);
+    const colCantLetter = String.fromCharCode(67 + offsetRubro);
     const colBLetter = String.fromCharCode(67 + offsetTotal);
     const colDropLetter = String.fromCharCode(68 + offsetTotal);
     const colImpLetter = String.fromCharCode(69 + offsetTotal);
+    const colResLetter = String.fromCharCode(70 + offsetTotal);
 
     filas.forEach((f, idx) => {
       const r = idx + 4;
       const rowValues: (string | number | { formula: string })[] = [f.concepto];
       if (tieneColumnaRubro) rowValues.push(f.detalleRubro);
 
-      const valorAExportar = esPresupuesto ? f.valorA * (1 + imp / 100) : f.valorA;
-      rowValues.push(valorAExportar);
+      rowValues.push(f.valorA);
       if (esPedidos) rowValues.push(f.cantidad || 1);
 
       let formulaImpuesto = "0";
@@ -776,10 +778,7 @@ export default function PlanillasGenerator() {
           formulaResultado = `(${colALetter}${r}*${colBLetter}${r})-${colImpLetter}${r}`;
           break;
         case "presupuesto":
-          formulaImpuesto =
-            imp > 0
-              ? `(${colALetter}${r}*${colBLetter}${r})-(${colALetter}${r}*${colBLetter}${r})/(1+${imp / 100})`
-              : "0";
+          formulaImpuesto = `(${colALetter}${r}*${colBLetter}${r})*${imp / 100}`;
           formulaResultado = `${colALetter}${r}*${colBLetter}${r}`;
           break;
         case "cuentas":
@@ -803,6 +802,10 @@ export default function PlanillasGenerator() {
         { formula: formulaResultado }
       );
 
+      if (esPresupuesto) {
+        rowValues.push({ formula: `${colResLetter}${r}+${colImpLetter}${r}` });
+      }
+
       const addedRow = sheet.addRow(rowValues);
       addedRow.height = 22;
 
@@ -824,7 +827,13 @@ export default function PlanillasGenerator() {
       }
       addedRow.getCell(5 + offsetTotal).numFmt = `"${moneda}"#,##0.00`;
       addedRow.getCell(6 + offsetTotal).numFmt = `"${moneda}"#,##0.00`;
-      addedRow.getCell(6 + offsetTotal).font = { bold: true };
+
+      if (esPresupuesto) {
+        addedRow.getCell(7 + offsetTotal).numFmt = `"${moneda}"#,##0.00`;
+        addedRow.getCell(7 + offsetTotal).font = { bold: true };
+      } else {
+        addedRow.getCell(6 + offsetTotal).font = { bold: true };
+      }
     });
 
     sheet.columns.forEach((col) => {
@@ -843,7 +852,13 @@ export default function PlanillasGenerator() {
     URL.revokeObjectURL(url);
   };
 
-  const totalGeneral = filas.reduce((acc, f) => acc + calcularResultadoFila(f), 0);
+  const totalGeneral = filas.reduce((acc, f) => {
+    const base = calcularResultadoFila(f);
+    if (plantilla === "presupuesto") {
+      return acc + base + calcularDetalleImpuesto(f).montoImpuesto;
+    }
+    return acc + base;
+  }, 0);
   const promedioPorFila = filas.length > 0 ? totalGeneral / filas.length : 0;
   const impActual = getPorcentajeImpuesto();
 
@@ -1506,11 +1521,7 @@ export default function PlanillasGenerator() {
                       {rubro !== "general" && (
                         <th className="py-3.5 px-4 text-blue-700">{rubroActual.columnaExtra}</th>
                       )}
-                      <th className="py-3.5 px-4">
-                        {plantilla === "presupuesto"
-                          ? `${configActual.colA} (c/ Imp.)`
-                          : configActual.colA}
-                      </th>
+                      <th className="py-3.5 px-4">{configActual.colA}</th>
                       {plantilla === "pedidos" && (
                         <th className="py-3.5 px-4">Cantidad</th>
                       )}
@@ -1524,17 +1535,23 @@ export default function PlanillasGenerator() {
                           : `Desc. Impuesto (${impActual}%)`}
                       </th>
                       <th className="py-3.5 px-4 text-right">{configActual.colResultado}</th>
+                      {plantilla === "presupuesto" && (
+                        <th className="py-3.5 px-4 text-right text-blue-800">
+                          Total Final (c/ Imp.)
+                        </th>
+                      )}
                       <th className="py-3.5 px-3 w-10 print:hidden"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filas.map((f) => {
                       const resultado = calcularResultadoFila(f);
-                      const { montoImpuesto, precioUnitarioFinal } = calcularDetalleImpuesto(f);
+                      const { montoImpuesto } = calcularDetalleImpuesto(f);
                       const esPresupuesto = plantilla === "presupuesto";
                       const esPedidos = plantilla === "pedidos";
                       const esSumaImpuesto =
                         esPresupuesto || plantilla === "precios" || esPedidos;
+                      const totalFinalPresupuesto = resultado + montoImpuesto;
 
                       return (
                         <tr key={f.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1565,23 +1582,10 @@ export default function PlanillasGenerator() {
                               <span className="text-xs text-slate-400 mr-1">{moneda}</span>
                               <input
                                 type="number"
-                                value={
-                                  esPresupuesto
-                                    ? Number(precioUnitarioFinal.toFixed(2))
-                                    : f.valorA
+                                value={f.valorA}
+                                onChange={(e) =>
+                                  actualizarFila(f.id, "valorA", Number(e.target.value))
                                 }
-                                onChange={(e) => {
-                                  const nuevoVal = Number(e.target.value);
-                                  if (esPresupuesto && impActual > 0) {
-                                    actualizarFila(
-                                      f.id,
-                                      "valorA",
-                                      nuevoVal / (1 + impActual / 100)
-                                    );
-                                  } else {
-                                    actualizarFila(f.id, "valorA", nuevoVal);
-                                  }
-                                }}
                                 className="w-24 px-2.5 py-1.5 border border-slate-200 hover:border-slate-300 focus:border-blue-500 rounded-lg bg-white text-slate-800 font-medium"
                               />
                             </div>
@@ -1654,6 +1658,8 @@ export default function PlanillasGenerator() {
                               className={`inline-block px-2.5 py-1 rounded-lg font-bold text-sm ${
                                 resultado < 0
                                   ? "bg-red-50 text-red-700"
+                                  : esPresupuesto
+                                  ? "bg-slate-100 text-slate-800"
                                   : "bg-emerald-50/70 text-emerald-800"
                               }`}
                             >
@@ -1664,6 +1670,18 @@ export default function PlanillasGenerator() {
                               })}
                             </span>
                           </td>
+
+                          {esPresupuesto && (
+                            <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                              <span className="inline-block px-2.5 py-1 rounded-lg font-bold text-sm bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {moneda}
+                                {totalFinalPresupuesto.toLocaleString("es-AR", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </span>
+                            </td>
+                          )}
 
                           <td className="py-2.5 px-3 text-center print:hidden">
                             <button
