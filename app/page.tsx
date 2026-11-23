@@ -59,6 +59,8 @@ interface RowData {
   valorA: number;
   valorB: number;
   cantidad: number;
+  stockMinimo: number;
+  fecha: string;
   desplegable: string;
 }
 
@@ -407,6 +409,7 @@ export default function PlanillasGenerator() {
     try {
       const nuevasFilas: RowData[] = [];
       const extension = file.name.split(".").pop()?.toLowerCase();
+      const hoy = new Date().toISOString().split("T")[0];
 
       if (extension === "csv") {
         const text = await file.text();
@@ -427,6 +430,8 @@ export default function PlanillasGenerator() {
               valorA: isNaN(numA) ? 0 : numA,
               valorB: isNaN(numB) ? (plantilla === "precios" ? 35 : 1) : numB,
               cantidad: 1,
+              stockMinimo: 5,
+              fecha: hoy,
               desplegable: configActual.defaultDropdown,
             });
           }
@@ -456,6 +461,8 @@ export default function PlanillasGenerator() {
               valorA: numA,
               valorB: isNaN(numB) ? (plantilla === "precios" ? 35 : 1) : numB,
               cantidad: 1,
+              stockMinimo: 5,
+              fecha: hoy,
               desplegable: configActual.defaultDropdown,
             });
           }
@@ -526,7 +533,7 @@ export default function PlanillasGenerator() {
     }
   };
 
-  const [filas, setFilas] = useState<RowData[]>([
+const [filas, setFilas] = useState<RowData[]>([
     {
       id: 1,
       concepto: "Zapatillas Urbanas Air Pro",
@@ -534,6 +541,8 @@ export default function PlanillasGenerator() {
       valorA: 68000,
       valorB: 35000,
       cantidad: 1,
+      stockMinimo: 5,
+      fecha: new Date().toISOString().split("T")[0],
       desplegable: "Clásica (13%)",
     },
     {
@@ -543,6 +552,8 @@ export default function PlanillasGenerator() {
       valorA: 42900,
       valorB: 19500,
       cantidad: 1,
+      stockMinimo: 5,
+      fecha: new Date().toISOString().split("T")[0],
       desplegable: "Premium (28%)",
     },
     {
@@ -552,24 +563,39 @@ export default function PlanillasGenerator() {
       valorA: 31000,
       valorB: 14500,
       cantidad: 1,
+      stockMinimo: 5,
+      fecha: new Date().toISOString().split("T")[0],
       desplegable: "Clásica (13%)",
     },
   ]);
+
+  const calcularEstadoStockDinamico = (stockActual: number, stockMin: number): string => {
+    if (stockActual <= 0) return "Sin Stock";
+    if (stockActual <= stockMin) return "Stock Bajo";
+    return "Disponible";
+  };
 
   const cambiarPlantilla = (nueva: TemplateType) => {
     setPlantilla(nueva);
     const nuevaConfig = PLANTILLAS_CONFIG[nueva];
     setFilas(
-      filas.map((f) => ({
-        ...f,
-        desplegable: nuevaConfig.defaultDropdown,
-        valorB:
+      filas.map((f) => {
+        const nuevoValorB =
           nueva === "precios"
             ? 40
             : nueva === "stock" || nueva === "caja" || nueva === "presupuesto"
             ? 5
-            : f.valorB,
-      }))
+            : f.valorB;
+
+        return {
+          ...f,
+          valorB: nuevoValorB,
+          desplegable:
+            nueva === "stock"
+              ? calcularEstadoStockDinamico(nuevoValorB, f.stockMinimo ?? 5)
+              : nuevaConfig.defaultDropdown,
+        };
+      })
     );
   };
 
@@ -590,6 +616,8 @@ export default function PlanillasGenerator() {
         valorA: 20000,
         valorB: plantilla === "precios" ? 35 : 2,
         cantidad: 1,
+        stockMinimo: 5,
+        fecha: new Date().toISOString().split("T")[0],
         desplegable: configActual.defaultDropdown,
       },
     ]);
@@ -597,6 +625,56 @@ export default function PlanillasGenerator() {
 
   const eliminarFila = (id: number) => {
     setFilas(filas.filter((f) => f.id !== id));
+  };
+
+  const registrarVentaItem = (item: RowData, unidadesVendidas: number = 1) => {
+    if (item.valorB <= 0) {
+      mostrarNotificacion(`"${item.concepto}" no tiene stock disponible.`);
+      return;
+    }
+
+    const cantidadFinal = Math.min(unidadesVendidas, item.valorB);
+    const nuevoStock = Math.max(0, item.valorB - cantidadFinal);
+    const nuevoEstado =
+      item.desplegable === "En Camino"
+        ? "En Camino"
+        : calcularEstadoStockDinamico(nuevoStock, item.stockMinimo ?? 5);
+
+    setFilas(
+      filas.map((f) =>
+        f.id === item.id
+          ? { ...f, valorB: nuevoStock, desplegable: nuevoEstado }
+          : f
+      )
+    );
+
+    if (user) {
+      const hoy = new Date().toISOString().split("T")[0];
+      const movimientoCaja: RowData = {
+        id: Date.now(),
+        concepto: `Venta: ${item.concepto}`,
+        detalleRubro: item.detalleRubro,
+        valorA: item.valorA,
+        valorB: cantidadFinal,
+        cantidad: cantidadFinal,
+        stockMinimo: 0,
+        fecha: hoy,
+        desplegable: "Efectivo",
+      };
+
+      const planillaCajaExistente = misPlanillas.find((p) => p.plantilla === "caja");
+      if (planillaCajaExistente) {
+        supabase
+          .from("planillas")
+          .update({ filas: [movimientoCaja, ...planillaCajaExistente.filas] })
+          .eq("id", planillaCajaExistente.id)
+          .then(() => cargarPlanillasUsuario());
+      }
+    }
+
+    mostrarNotificacion(
+      `Venta impactada: -${cantidadFinal} u. de "${item.concepto}" (Stock restante: ${nuevoStock}).`
+    );
   };
 
   const actualizarFila = (id: number, campo: keyof RowData, valor: string | number) => {
