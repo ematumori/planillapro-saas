@@ -1627,6 +1627,8 @@ const [filas, setFilas] = useState<RowData[]>([
                       const { montoImpuesto } = calcularDetalleImpuesto(f);
                       const esPresupuesto = plantilla === "presupuesto";
                       const esPedidos = plantilla === "pedidos";
+                      const esCaja = plantilla === "caja";
+                      const esStock = plantilla === "stock";
                       const esSumaImpuesto =
                         esPresupuesto || plantilla === "precios" || esPedidos;
                       const totalFinalPresupuesto = resultado + montoImpuesto;
@@ -1762,13 +1764,30 @@ const [filas, setFilas] = useState<RowData[]>([
                           )}
 
                           <td className="py-2.5 px-3 text-center print:hidden">
-                            <button
-                              onClick={() => eliminarFila(f.id)}
-                              className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition cursor-pointer"
-                              title="Eliminar fila"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="inline-flex items-center gap-1.5">
+                              {plantilla === "stock" && (
+                                <button
+                                  type="button"
+                                  onClick={() => registrarVentaItem(f, 1)}
+                                  disabled={f.valorB <= 0}
+                                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                    f.valorB <= 0
+                                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                      : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                                  }`}
+                                  title="Descontar 1 unidad vendida del stock"
+                                >
+                                  -1 Venta
+                                </button>
+                              )}
+                              <button
+                                onClick={() => eliminarFila(f.id)}
+                                className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition cursor-pointer"
+                                title="Eliminar fila"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
