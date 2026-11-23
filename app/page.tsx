@@ -250,6 +250,11 @@ export default function PlanillasGenerator() {
   const rubroActual = RUBROS_CONFIG[rubro];
 
   useEffect(() => {
+    const hoy = new Date().toISOString().split("T")[0];
+    setFilas((prev) =>
+      prev.map((f) => (f.fecha === "" ? { ...f, fecha: hoy } : f))
+    );
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user ?? null;
       setUser(u);
@@ -542,7 +547,7 @@ const [filas, setFilas] = useState<RowData[]>([
       valorB: 35000,
       cantidad: 1,
       stockMinimo: 5,
-      fecha: new Date().toISOString().split("T")[0],
+      fecha: "",
       desplegable: "Clásica (13%)",
     },
     {
@@ -553,7 +558,7 @@ const [filas, setFilas] = useState<RowData[]>([
       valorB: 19500,
       cantidad: 1,
       stockMinimo: 5,
-      fecha: new Date().toISOString().split("T")[0],
+      fecha: "",
       desplegable: "Premium (28%)",
     },
     {
@@ -564,7 +569,7 @@ const [filas, setFilas] = useState<RowData[]>([
       valorB: 14500,
       cantidad: 1,
       stockMinimo: 5,
-      fecha: new Date().toISOString().split("T")[0],
+      fecha: "",
       desplegable: "Clásica (13%)",
     },
   ]);
