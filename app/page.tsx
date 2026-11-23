@@ -345,7 +345,7 @@ export default function PlanillasGenerator() {
 
     if (!esPro && misPlanillas.length >= LIMITE_PLANILLAS_GRATIS) {
       abrirModalUpgrade(
-        `El plan Gratuito permite guardar hasta ${LIMITE_PLANILLAS_GRATIS} planillas en la nube. Actualiza a PlanillaPro para almacenamiento ilimitado.`
+        `El plan Gratuito permite guardar hasta ${LIMITE_PLANILLAS_GRATIS} planillas en la nube. Actualiza a CálculoPro para almacenamiento ilimitado.`
       );
       return;
     }
@@ -572,7 +572,7 @@ export default function PlanillasGenerator() {
   const agregarFila = () => {
     if (!esPro && filas.length >= LIMITE_FILAS_GRATIS) {
       abrirModalUpgrade(
-        `Has alcanzado el límite de ${LIMITE_FILAS_GRATIS} filas del plan Gratuito. Desbloquea filas ilimitadas con PlanillaPro.`
+        `Has alcanzado el límite de ${LIMITE_FILAS_GRATIS} filas del plan Gratuito. Desbloquea filas ilimitadas con CálculoPro.`
       );
       return;
     }
@@ -795,7 +795,7 @@ export default function PlanillasGenerator() {
             <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-6 text-white flex justify-between items-start">
               <div>
                 <div className="inline-flex items-center gap-1.5 bg-white/20 px-2.5 py-1 rounded-full text-xs font-bold mb-2">
-                  <Crown className="w-3.5 h-3.5" /> PLANILLAPRO ILIMITADO
+                  <Crown className="w-3.5 h-3.5" /> CálculoPro ILIMITADO
                 </div>
                 <h3 className="font-extrabold text-2xl">Escala tu gestión comercial</h3>
                 <p className="text-xs text-amber-50 mt-1">
@@ -871,7 +871,7 @@ export default function PlanillasGenerator() {
               <div className="flex items-center gap-2">
                 <Cloud className="w-5 h-5 text-blue-600" />
                 <h3 className="font-bold text-lg text-slate-900">
-                  {isRegisterMode ? "Crear Cuenta en PlanillaPro" : "Iniciar Sesión"}
+                  {isRegisterMode ? "Crear Cuenta en CálculoPro" : "Iniciar Sesión"}
                 </h3>
               </div>
               <button
@@ -1030,7 +1030,7 @@ export default function PlanillasGenerator() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-bold text-lg tracking-tight text-slate-900">PlanillaPro</h1>
+              <h1 className="font-bold text-lg tracking-tight text-slate-900">CálculoPro</h1>
               {esPro ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full">
                   <Crown className="w-3 h-3" /> PRO
