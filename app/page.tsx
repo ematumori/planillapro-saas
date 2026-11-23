@@ -58,6 +58,7 @@ interface RowData {
   detalleRubro: string;
   valorA: number;
   valorB: number;
+  cantidad: number;
   desplegable: string;
 }
 
@@ -398,7 +399,7 @@ export default function PlanillasGenerator() {
     }
   };
 
-  // IMPORTACIÓN MASIVA DESDE EXCEL (.xlsx) O CSV (.csv)
+// IMPORTACIÓN MASIVA DESDE EXCEL (.xlsx) O CSV (.csv)
   const handleImportarArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -415,7 +416,6 @@ export default function PlanillasGenerator() {
         lineas.forEach((linea, index) => {
           const cols = linea.split(separador).map((c) => c.replace(/^"|"$/g, "").trim());
           const numA = parseFloat(cols[1]?.replace(/[^0-9.-]/g, "") || "");
-          // Saltar fila de encabezado si la segunda columna no es numérica
           if (index === 0 && isNaN(numA)) return;
 
           if (cols[0]) {
@@ -426,6 +426,7 @@ export default function PlanillasGenerator() {
               detalleRubro: cols[3] || rubroActual.ejemplo || "-",
               valorA: isNaN(numA) ? 0 : numA,
               valorB: isNaN(numB) ? (plantilla === "precios" ? 35 : 1) : numB,
+              cantidad: 1,
               desplegable: configActual.defaultDropdown,
             });
           }
@@ -438,14 +439,13 @@ export default function PlanillasGenerator() {
 
         sheet.eachRow((row, rowNumber) => {
           const vals = row.values as (string | number | { result?: number } | null | undefined)[];
-          // ExcelJS indexa las celdas desde 1
           const c1 = vals[1]?.toString().trim() || "";
           const rawA = typeof vals[2] === "object" && vals[2] !== null ? vals[2].result : vals[2];
           const rawB = typeof vals[3] === "object" && vals[3] !== null ? vals[3].result : vals[3];
           const c4 = vals[4]?.toString().trim() || "";
 
           const numA = parseFloat(String(rawA ?? "").replace(/[^0-9.-]/g, ""));
-          if (rowNumber <= 3 && isNaN(numA)) return; // Omitir títulos o encabezados
+          if (rowNumber <= 3 && isNaN(numA)) return;
 
           if (c1 && !isNaN(numA)) {
             const numB = parseFloat(String(rawB ?? "").replace(/[^0-9.-]/g, ""));
@@ -455,6 +455,7 @@ export default function PlanillasGenerator() {
               detalleRubro: c4 || rubroActual.ejemplo || "-",
               valorA: numA,
               valorB: isNaN(numB) ? (plantilla === "precios" ? 35 : 1) : numB,
+              cantidad: 1,
               desplegable: configActual.defaultDropdown,
             });
           }
@@ -532,6 +533,7 @@ export default function PlanillasGenerator() {
       detalleRubro: "42 / Negro",
       valorA: 68000,
       valorB: 35000,
+      cantidad: 1,
       desplegable: "Clásica (13%)",
     },
     {
@@ -540,6 +542,7 @@ export default function PlanillasGenerator() {
       detalleRubro: "12 meses / SN-884",
       valorA: 42900,
       valorB: 19500,
+      cantidad: 1,
       desplegable: "Premium (28%)",
     },
     {
@@ -548,6 +551,7 @@ export default function PlanillasGenerator() {
       detalleRubro: "Estándar / Gris",
       valorA: 31000,
       valorB: 14500,
+      cantidad: 1,
       desplegable: "Clásica (13%)",
     },
   ]);
@@ -572,7 +576,7 @@ export default function PlanillasGenerator() {
   const agregarFila = () => {
     if (!esPro && filas.length >= LIMITE_FILAS_GRATIS) {
       abrirModalUpgrade(
-        `Has alcanzado el límite de ${LIMITE_FILAS_GRATIS} filas del plan Gratuito. Desbloquea filas ilimitadas con PlanillaPro.`
+        `Has alcanzado el límite de ${LIMITE_FILAS_GRATIS} filas del plan Gratuito. Desbloquea filas ilimitadas con MargenReal Pro.`
       );
       return;
     }
@@ -585,6 +589,7 @@ export default function PlanillasGenerator() {
         detalleRubro: rubroActual.ejemplo || "-",
         valorA: 20000,
         valorB: plantilla === "precios" ? 35 : 2,
+        cantidad: 1,
         desplegable: configActual.defaultDropdown,
       },
     ]);
