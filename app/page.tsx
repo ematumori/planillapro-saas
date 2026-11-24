@@ -214,6 +214,9 @@ export default function PlanillasGenerator() {
   // Estados de Autenticación, Suscripción y Nube
   const [user, setUser] = useState<User | null>(null);
   const [esPro, setEsPro] = useState<boolean>(false);
+  const [emailUsuario, setEmailUsuario] = useState<string>("");
+  const [inputEmail, setInputEmail] = useState<string>("");
+  const [mensajeLogin, setMensajeLogin] = useState<string>("");
   const [showProModal, setShowProModal] = useState<boolean>(false);
   const [proMotivo, setProMotivo] = useState<string>("");
 
@@ -248,6 +251,54 @@ export default function PlanillasGenerator() {
 
   const configActual = PLANTILLAS_CONFIG[plantilla];
   const rubroActual = RUBROS_CONFIG[rubro];
+  const verificarEsPro = (correo: string): boolean => {
+    const listaCruda = process.env.NEXT_PUBLIC_PRO_EMAILS || "";
+    const correosAutorizados = listaCruda
+      .split(",")
+      .map((c) => c.trim().toLowerCase())
+      .filter((c) => c.length > 0);
+
+    return correosAutorizados.includes(correo.trim().toLowerCase());
+  };
+
+  useEffect(() => {
+    const emailGuardado = localStorage.getItem("calculopro_email");
+    if (emailGuardado) {
+      setEmailUsuario(emailGuardado);
+      setInputEmail(emailGuardado);
+      const autorizado = verificarEsPro(emailGuardado);
+      setEsPro(autorizado);
+    }
+  }, []);
+
+
+  const manejarAccesoEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    const correoLimpio = inputEmail.trim().toLowerCase();
+    if (!correoLimpio || !correoLimpio.includes("@")) {
+      setMensajeLogin("Ingresá un correo electrónico válido.");
+      return;
+    }
+
+    localStorage.setItem("calculopro_email", correoLimpio);
+    setEmailUsuario(correoLimpio);
+
+    if (verificarEsPro(correoLimpio)) {
+      setEsPro(true);
+      setMensajeLogin("¡Licencia Pro activada correctamente!");
+    } else {
+      setEsPro(false);
+      setMensajeLogin("Correo registrado en Plan Gratuito. Si ya compraste Pro, aguardá la activación.");
+    }
+  };
+
+  const cerrarSesionEmail = () => {
+    localStorage.removeItem("calculopro_email");
+    setEmailUsuario("");
+    setInputEmail("");
+    setEsPro(false);
+    setMensajeLogin("");
+  };
 
   useEffect(() => {
     const hoy = new Date().toISOString().split("T")[0];
@@ -1224,6 +1275,61 @@ const [filas, setFilas] = useState<RowData[]>([
             onChange={handleImportarArchivo}
             className="hidden"
           />
+          {/* INICIO BLOQUE ACCESO POR CORREO */}
+            <div className="flex flex-col items-end">
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
+                {emailUsuario ? (
+                  <>
+                    <span
+                      className="text-slate-700 font-medium truncate max-w-[160px]"
+                      title={emailUsuario}
+                    >
+                      {emailUsuario}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                        esPro
+                          ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
+                          : "bg-amber-100 text-amber-700 border border-amber-300"
+                      }`}
+                    >
+                      {esPro ? "PRO" : "GRATIS"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={cerrarSesionEmail}
+                      className="text-xs text-slate-400 hover:text-red-600 ml-1 underline"
+                      title="Cambiar correo"
+                    >
+                      Salir
+                    </button>
+                  </>
+                ) : (
+                  <form onSubmit={manejarAccesoEmail} className="flex items-center gap-1.5">
+                    <input
+                      type="email"
+                      placeholder="Tu correo electrónico..."
+                      value={inputEmail}
+                      onChange={(e) => setInputEmail(e.target.value)}
+                      className="px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800 focus:outline-none focus:border-blue-600 w-44"
+                      required
+                    />
+                    <button
+                      type="submit"
+                      className="px-2.5 py-1 text-xs font-semibold bg-blue-700 text-white rounded hover:bg-blue-800 transition"
+                    >
+                      Activar
+                    </button>
+                  </form>
+                )}
+              </div>
+              {mensajeLogin && (
+                <span className={`text-[11px] mt-1 font-medium ${esPro ? "text-emerald-700" : "text-amber-700"}`}>
+                  {mensajeLogin}
+                </span>
+              )}
+            </div>
+            {/* FIN BLOQUE ACCESO POR CORREO */}
           <button
             onClick={() => importExcelInputRef.current?.click()}
             title="Importar productos desde Excel (.xlsx) o CSV"
