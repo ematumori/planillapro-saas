@@ -262,17 +262,64 @@ export default function PlanillasGenerator() {
   };
 
   useEffect(() => {
+    const hoy = new Date().toISOString().split("T")[0];
+    setFilas((prev) =>
+      prev.map((f) => (f.fecha === "" ? { ...f, fecha: hoy } : f))
+    );
+
     const emailGuardado = localStorage.getItem("calculopro_email");
+    const esProPorLista = emailGuardado ? verificarEsPro(emailGuardado) : false;
+
     if (emailGuardado) {
       setEmailUsuario(emailGuardado);
       setInputEmail(emailGuardado);
-      const autorizado = verificarEsPro(emailGuardado);
-      setEsPro(autorizado);
+      setEsPro(esProPorLista);
     }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) {
+        cargarPlanillasUsuario();
+        verificarEstadoPro(u.id, u.email || emailGuardado || "");
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) {
+        cargarPlanillasUsuario();
+        verificarEstadoPro(u.id, u.email || emailGuardado || "");
+      } else {
+        setMisPlanillas([]);
+        // Solo apaga esPro si tampoco está autorizado por la lista de correos
+        const correoActual = localStorage.getItem("calculopro_email") || "";
+        setEsPro(verificarEsPro(correoActual));
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
+  const verificarEstadoPro = async (userId: string, correo?: string) => {
+    const correoCheck = correo || localStorage.getItem("calculopro_email") || "";
+    if (verificarEsPro(correoCheck)) {
+      setEsPro(true);
+      return;
+    }
 
-  const manejarAccesoEmail = (e: React.FormEvent) => {
+    const { data } = await supabase
+      .from("perfiles")
+      .select("es_pro")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    setEsPro(Boolean(data?.es_pro));
+  };
+const manejarAccesoEmail = (e: React.FormEvent) => {
     e.preventDefault();
     const correoLimpio = inputEmail.trim().toLowerCase();
     if (!correoLimpio || !correoLimpio.includes("@")) {
@@ -299,49 +346,6 @@ export default function PlanillasGenerator() {
     setEsPro(false);
     setMensajeLogin("");
   };
-
-  useEffect(() => {
-    const hoy = new Date().toISOString().split("T")[0];
-    setFilas((prev) =>
-      prev.map((f) => (f.fecha === "" ? { ...f, fecha: hoy } : f))
-    );
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) {
-        cargarPlanillasUsuario();
-        verificarEstadoPro(u.id);
-      }
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) {
-        cargarPlanillasUsuario();
-        verificarEstadoPro(u.id);
-      } else {
-        setMisPlanillas([]);
-        setEsPro(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const verificarEstadoPro = async (userId: string) => {
-    const { data } = await supabase
-      .from("perfiles")
-      .select("es_pro")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    setEsPro(Boolean(data?.es_pro));
-  };
-
   const abrirModalUpgrade = (motivo: string) => {
     setProMotivo(motivo);
     setShowProModal(true);
@@ -1242,6 +1246,8 @@ const [filas, setFilas] = useState<RowData[]>([
 
       {/* BARRA SUPERIOR */}
       <header className="bg-white border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20 print:hidden">
+
+       
         <div className="flex items-center gap-3">
           <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-2.5 rounded-xl text-white shadow-sm">
             <FileSpreadsheet className="w-6 h-6" />
