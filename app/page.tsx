@@ -353,7 +353,7 @@ export default function PlanillasGenerator() {
 
     if (!esPro && misPlanillas.length >= LIMITE_PLANILLAS_GRATIS) {
       abrirModalUpgrade(
-        `El plan Gratuito permite guardar hasta ${LIMITE_PLANILLAS_GRATIS} planillas en la nube. Actualiza a PlanillaPro para almacenamiento ilimitado.`
+        `El plan Gratuito permite guardar hasta ${LIMITE_PLANILLAS_GRATIS} planillas en la nube. Actualiza a CálculoPro para almacenamiento ilimitado.`
       );
       return;
     }
@@ -962,7 +962,7 @@ const [filas, setFilas] = useState<RowData[]>([
             <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-6 text-white flex justify-between items-start">
               <div>
                 <div className="inline-flex items-center gap-1.5 bg-white/20 px-2.5 py-1 rounded-full text-xs font-bold mb-2">
-                  <Crown className="w-3.5 h-3.5" /> PLANILLAPRO ILIMITADO
+                  <Crown className="w-3.5 h-3.5" /> CÁLCULOPRO ILIMITADO
                 </div>
                 <h3 className="font-extrabold text-2xl">Escala tu gestión comercial</h3>
                 <p className="text-xs text-amber-50 mt-1">
@@ -980,7 +980,7 @@ const [filas, setFilas] = useState<RowData[]>([
             <div className="p-6 space-y-5">
               <div className="flex items-baseline justify-between border-b pb-4">
                 <div>
-                  <span className="text-3xl font-extrabold text-slate-900">$9 USD</span>
+                  <span className="text-3xl font-extrabold text-slate-900">$25000 ARS</span>
                   <span className="text-xs text-slate-500 font-medium"> / mes (o equivalente en moneda local)</span>
                 </div>
                 <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">
@@ -1038,7 +1038,7 @@ const [filas, setFilas] = useState<RowData[]>([
               <div className="flex items-center gap-2">
                 <Cloud className="w-5 h-5 text-blue-600" />
                 <h3 className="font-bold text-lg text-slate-900">
-                  {isRegisterMode ? "Crear Cuenta en PlanillaPro" : "Iniciar Sesión"}
+                  {isRegisterMode ? "Crear Cuenta en CálculoPro" : "Iniciar Sesión"}
                 </h3>
               </div>
               <button
